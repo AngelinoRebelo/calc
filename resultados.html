@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resultados da Simulação de Aposentadoria</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .result-card { transition: all 0.3s ease-in-out; }
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fade-in 0.5s ease-out forwards; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+        <div id="results-container" class="space-y-6">
+            <!-- Os resultados serão inseridos aqui -->
+        </div>
+
+        <div class="text-center mt-10">
+            <a href="index.html" class="bg-blue-600 text-white font-bold py-3 px-10 rounded-lg hover:bg-blue-700 transition-colors duration-300 shadow-md hover:shadow-lg">
+                Fazer Nova Consulta
+            </a>
+        </div>
+
+        <footer class="text-center mt-10 text-xs text-gray-500">
+            <p><strong>Aviso Legal:</strong> Esta calculadora é uma ferramenta de simulação. Os resultados devem ser confirmados com o INSS.</p>
+        </footer>
+    </div>
+
+    <script>
+        // --- FUNÇÕES DE UTILIDADE E DATA ---
+        function formatTimeDifference(years, months, days) {
+            let parts = [];
+            if (years > 0) parts.push(`${years} ${years > 1 ? 'anos' : 'ano'}`);
+            if (months > 0) parts.push(`${months} ${months > 1 ? 'meses' : 'mês'}`);
+            if (days > 0) parts.push(`${days} ${days > 1 ? 'dias' : 'dia'}`);
+            return parts.length > 0 ? parts.join(', ') : "0 dias";
+        }
+
+        function dateDiff(startDate, endDate) {
+            let years = endDate.getFullYear() - startDate.getFullYear();
+            let months = endDate.getMonth() - startDate.getMonth();
+            let days = endDate.getDate() - startDate.getDate();
+            if (days < 0) {
+                months--;
+                days += new Date(endDate.getFullYear(), endDate.getMonth(), 0).getDate();
+            }
+            if (months < 0) {
+                years--;
+                months += 12;
+            }
+            return { years, months, days, totalDays: (endDate - startDate) / (1000 * 60 * 60 * 24) };
+        }
+        
+        function totalDaysToYMD(totalDays) {
+            const years = Math.floor(totalDays / 365.25);
+            const months = Math.floor((totalDays % 365.25) / 30.4375);
+            const days = Math.round((totalDays % 365.25) % 30.4375);
+            return { years, months, days, totalDays };
+        }
+
+        function calculateTotalContributionFromPeriods(periods) {
+            const datePeriods = periods
+                .map(p => ({ start: new Date(p.dataInicio), end: new Date(p.dataFim) }))
+                .filter(p => !isNaN(p.start) && !isNaN(p.end) && p.start <= p.end)
+                .sort((a, b) => a.start - b.start);
+
+            if (datePeriods.length === 0) return { totalContributionDays: 0, firstContributionDate: null };
+
+            const merged = [datePeriods[0]];
+            for (let i = 1; i < datePeriods.length; i++) {
+                const last = merged[merged.length - 1];
+                if (datePeriods[i].start <= last.end) {
+                    last.end = new Date(Math.max(last.end, datePeriods[i].end));
+                } else {
+                    merged.push(datePeriods[i]);
+                }
+            }
+            const totalContributionDays = merged.reduce((acc, p) => acc + ((p.end - p.start) / 86400000) + 1, 0);
+            return { totalContributionDays, firstContributionDate: datePeriods[0].start };
+        }
+
+        // --- LÓGICA DE RENDERIZAÇÃO ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const resultsDataString = localStorage.getItem('retirementResults');
+            const resultsContainer = document.getElementById('results-container');
+
+            if (!resultsDataString) {
+                resultsContainer.innerHTML = `
+                    <div class="text-center p-10 bg-white rounded-lg shadow-md animate-fade-in">
+                        <h2 class="text-2xl font-semibold text-gray-700">Nenhum dado encontrado</h2>
+                        <p class="mt-2 text-gray-500">Por favor, faça uma nova consulta na página principal.</p>
+                    </div>`;
+                return;
+            }
+
+            try {
+                const data = JSON.parse(resultsDataString);
+                const { totalContributionDays, firstContributionDate } = calculateTotalContributionFromPeriods(data.periods);
+                const contributionTime = totalDaysToYMD(totalContributionDays);
+                
+                calculateRetirement(data.dob, data.gender, data.isTeacher, contributionTime, firstContributionDate);
+                // localStorage.removeItem('retirementResults'); // Opcional: limpa os dados após o uso
+            } catch (error) {
+                resultsContainer.innerHTML = `<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-lg animate-fade-in" role="alert"><p class="font-bold">Erro ao processar resultados</p><p>${error.message}</p></div>`;
+            }
+        });
+
+        function calculateRetirement(dob, gender, isTeacher, contributionTime, firstContributionDate) {
+            const today = new Date();
+            const birthDate = new Date(dob);
+            const age = dateDiff(birthDate, today);
+            
+            const resultsContainer = document.getElementById('results-container');
+            resultsContainer.innerHTML = `<div class="bg-white p-6 rounded-xl shadow-lg animate-fade-in">
+                <h2 class="text-2xl font-semibold mb-4 text-center text-gray-700">Resultados da Simulação</h2>
+                <div class="text-center mb-4 p-3 bg-gray-200 rounded-lg">
+                    <p><strong>Idade Atual:</strong> ${age.years} anos e ${age.months} meses.</p>
+                    <p><strong>Tempo Total de Contribuição:</strong> ${formatTimeDifference(contributionTime.years, contributionTime.months, contributionTime.days)}.</p>
+                </div>
+            </div>`;
+            
+            let minContributionTime = gender === 'male' ? 35 : 30;
+            if (isTeacher) minContributionTime -= 5;
+
+            calculatePointsRule(age, contributionTime, gender, isTeacher, minContributionTime, resultsContainer);
+            calculateMinAgeRule(age, contributionTime, gender, isTeacher, minContributionTime, resultsContainer);
+            calculateToll50Rule(firstContributionDate, contributionTime, gender, isTeacher, minContributionTime, resultsContainer);
+            calculateToll100Rule(age, firstContributionDate, contributionTime, gender, isTeacher, minContributionTime, resultsContainer);
+        }
+
+        function createResultCard(title, status, message, container) {
+            const statusColor = status === 'Elegível' ? 'green' : (status === 'Não Elegível' ? 'orange' : 'gray');
+            const cardHTML = `
+                <div class="result-card bg-white p-6 rounded-xl shadow-lg border-l-4 border-${statusColor}-500 animate-fade-in">
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">${title}</h3>
+                    <p class="text-lg font-semibold text-${statusColor}-600 mb-3">${status}</p>
+                    <div class="text-gray-600 space-y-1">${message}</div>
+                </div>
+            `;
+            container.innerHTML += cardHTML;
+        }
+        
+        // As funções de cálculo de regras (calculatePointsRule, etc.) são idênticas à versão anterior.
+        function calculatePointsRule(age, contributionTime, gender, isTeacher, minContributionTime, container) {
+            const today = new Date();
+            const currentYear = today.getFullYear();
+            let basePoints = (gender === 'male' ? 96 : 86) - (isTeacher ? 5 : 0);
+            const pointsLimit = (gender === 'male' ? 105 : 100);
+            let requiredPoints = basePoints + (currentYear - 2019);
+            if (requiredPoints > pointsLimit) requiredPoints = pointsLimit;
+            const currentPoints = age.years + contributionTime.years;
+            let message = `<p><strong>Requisitos (${currentYear}):</strong> ${requiredPoints} pontos e ${minContributionTime} anos de contribuição.</p><p><strong>Sua situação:</strong> ${currentPoints} pontos e ${contributionTime.years} anos, ${contributionTime.months} meses de contribuição.</p>`;
+            if (currentPoints >= requiredPoints && contributionTime.years >= minContributionTime) {
+                createResultCard('Regra 1: Sistema de Pontos', 'Elegível', message, container);
+            } else {
+                let yearsToAdd = 0;
+                while(yearsToAdd <= 70) {
+                    let futureYear = today.getFullYear() + Math.floor(yearsToAdd);
+                    let requiredPointsFuture = basePoints + (futureYear - 2019);
+                    if (requiredPointsFuture > pointsLimit) requiredPointsFuture = pointsLimit;
+                    let currentPointsFuture = (age.totalDays / 365.25 + yearsToAdd) + (contributionTime.totalDays / 365.25 + yearsToAdd);
+                    if (currentPointsFuture >= requiredPointsFuture && (contributionTime.totalDays / 365.25 + yearsToAdd) >= minContributionTime) break;
+                    yearsToAdd += 1/12;
+                }
+                const timeRemaining = dateDiff(today, new Date(today.getFullYear() + Math.floor(yearsToAdd), today.getMonth() + Math.ceil((yearsToAdd % 1) * 12), today.getDate()));
+                message += `<hr class="my-2"><p><strong>Tempo restante estimado:</strong> ${formatTimeDifference(timeRemaining.years, timeRemaining.months, timeRemaining.days)}.</p>`;
+                createResultCard('Regra 1: Sistema de Pontos', 'Não Elegível', message, container);
+            }
+        }
+        function calculateMinAgeRule(age, contributionTime, gender, isTeacher, minContributionTime, container) {
+            const today = new Date();
+            const currentYear = today.getFullYear();
+            let baseAge = (gender === 'male' ? 61 : 56) - (isTeacher ? 5 : 0);
+            const ageLimit = (gender === 'male' ? 65 : 62) - (isTeacher ? 5 : 0);
+            let requiredAge = baseAge + (currentYear - 2019) * 0.5;
+            if (requiredAge > ageLimit) requiredAge = ageLimit;
+            let message = `<p><strong>Requisitos (${currentYear}):</strong> ${requiredAge.toFixed(1).replace('.', ',')} anos de idade e ${minContributionTime} anos de contribuição.</p><p><strong>Sua situação:</strong> ${age.years} anos, ${age.months} meses de idade e ${contributionTime.years} anos, ${contributionTime.months} meses de contribuição.</p>`;
+            if (age.totalDays / 365.25 >= requiredAge && contributionTime.years >= minContributionTime) {
+                 createResultCard('Regra 2: Idade Mínima Progressiva', 'Elegível', message, container);
+            } else {
+                let yearsToAdd = 0;
+                while(yearsToAdd <= 70){
+                    let futureAgeFloat = age.totalDays / 365.25 + yearsToAdd;
+                    let futureYear = today.getFullYear() + Math.floor(yearsToAdd);
+                    let requiredAgeFuture = baseAge + (futureYear - 2019) * 0.5;
+                    if (requiredAgeFuture > ageLimit) requiredAgeFuture = ageLimit;
+                    if(futureAgeFloat >= requiredAgeFuture && (contributionTime.totalDays/365.25 + yearsToAdd) >= minContributionTime) break;
+                    yearsToAdd += 1/12;
+                }
+                const timeRemaining = dateDiff(today, new Date(today.getFullYear() + Math.floor(yearsToAdd), today.getMonth() + Math.ceil((yearsToAdd % 1) * 12), today.getDate()));
+                message += `<hr class="my-2"><p><strong>Tempo restante estimado:</strong> ${formatTimeDifference(timeRemaining.years, timeRemaining.months, timeRemaining.days)}.</p>`;
+                createResultCard('Regra 2: Idade Mínima Progressiva', 'Não Elegível', message, container);
+            }
+        }
+        function calculateToll50Rule(contributionStartDate, contributionTime, gender, isTeacher, minContributionTime, container) {
+            if (!contributionStartDate) {
+                createResultCard('Regra 3: Pedágio de 50%', 'Não Aplicável', "<p>Não foi possível determinar a data do primeiro vínculo para calcular esta regra.</p>", container);
+                return;
+            }
+            const reformDate = new Date('2019-11-13');
+            const contributionOnReformYears = dateDiff(contributionStartDate, reformDate).totalDays / 365.25;
+            const timeMissingOnReform = minContributionTime - contributionOnReformYears;
+            let message = `<p>Esta regra se aplica a quem faltava <strong>menos de 2 anos</strong> para atingir ${minContributionTime} anos de contribuição em 13/11/2019.</p>`;
+            if (timeMissingOnReform > 0 && timeMissingOnReform <= 2) {
+                const toll = timeMissingOnReform * 0.5;
+                const requiredContributionWithToll = minContributionTime + toll;
+                message += `<p><strong>Contribuição total necessária:</strong> ${requiredContributionWithToll.toFixed(2).replace('.', ',')} anos.</p>`;
+                if (contributionTime.totalDays / 365.25 >= requiredContributionWithToll) {
+                    createResultCard('Regra 3: Pedágio de 50%', 'Elegível', message, container);
+                } else {
+                    const yearsToAdd = requiredContributionWithToll - (contributionTime.totalDays / 365.25);
+                    const timeRemaining = totalDaysToYMD(yearsToAdd * 365.25);
+                    message += `<hr class="my-2"><p><strong>Tempo restante para cumprir o pedágio:</strong> ${formatTimeDifference(timeRemaining.years, timeRemaining.months, timeRemaining.days)}.</p>`;
+                    createResultCard('Regra 3: Pedágio de 50%', 'Não Elegível', message, container);
+                }
+            } else {
+                message += `<hr class="my-2"><p>Você não se enquadra nos critérios desta regra.</p>`;
+                createResultCard('Regra 3: Pedágio de 50%', 'Não Aplicável', message, container);
+            }
+        }
+        function calculateToll100Rule(age, contributionStartDate, contributionTime, gender, isTeacher, minContributionTime, container) {
+            if (!contributionStartDate) {
+                createResultCard('Regra 4: Pedágio de 100%', 'Não Aplicável', "<p>Não foi possível determinar a data do primeiro vínculo para calcular esta regra.</p>", container);
+                return;
+            }
+            const requiredAge = (gender === 'male' ? 60 : 57) - (isTeacher ? 5 : 0);
+            const reformDate = new Date('2019-11-13');
+            const timeMissingOnReform = Math.max(0, minContributionTime - (dateDiff(contributionStartDate, reformDate).totalDays / 365.25));
+            const requiredContributionWithToll = minContributionTime + timeMissingOnReform;
+            let message = `<p><strong>Requisitos:</strong> ${requiredAge} anos de idade e cumprir um pedágio de 100% do tempo que faltava para ${minContributionTime} anos de contribuição em 13/11/2019.</p><p><strong>Contribuição total necessária:</strong> ${requiredContributionWithToll.toFixed(2).replace('.', ',')} anos.</p>`;
+            if (age.totalDays / 365.25 >= requiredAge && contributionTime.totalDays / 365.25 >= requiredContributionWithToll) {
+                createResultCard('Regra 4: Pedágio de 100%', 'Elegível', message, container);
+            } else {
+                const timeToMeetAge = Math.max(0, requiredAge - (age.totalDays / 365.25));
+                const timeToMeetContribution = Math.max(0, requiredContributionWithToll - (contributionTime.totalDays / 365.25));
+                const yearsToAdd = Math.max(timeToMeetAge, timeToMeetContribution);
+                const timeRemaining = totalDaysToYMD(yearsToAdd * 365.25);
+                message += `<hr class="my-2"><p><strong>Tempo restante estimado:</strong> ${formatTimeDifference(timeRemaining.years, timeRemaining.months, timeRemaining.days)}.</p>`;
+                createResultCard('Regra 4: Pedágio de 100%', 'Não Elegível', message, container);
+            }
+        }
+    </script>
+</body>
+</html>
