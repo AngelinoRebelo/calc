@@ -1,0 +1,11 @@
+# Configuração para as Netlify Functions
+[functions]
+  # Diretório onde as funções estão localizadas.
+  directory = "netlify/functions/"
+
+# Redirecionamento para tornar a chamada da API mais limpa
+[[redirects]]
+  from = "/.netlify/functions/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+ 
