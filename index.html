@@ -11,9 +11,6 @@
         body {
             font-family: 'Inter', sans-serif;
         }
-        .result-card {
-            transition: all 0.3s ease-in-out;
-        }
         .loader {
             border: 4px solid #f3f3f3;
             border-top: 4px solid #3498db;
@@ -26,13 +23,6 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        @keyframes fade-in {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in {
-            animation: fade-in 0.5s ease-out forwards;
-        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
@@ -44,7 +34,7 @@
         </header>
 
         <!-- Formulário de Entrada de Dados -->
-        <div class="bg-white p-6 rounded-xl shadow-lg mb-8">
+        <div id="form-container" class="bg-white p-6 rounded-xl shadow-lg mb-8">
             <h2 class="text-2xl font-semibold mb-6 border-b pb-3 text-gray-700">Seus Dados</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
@@ -87,17 +77,11 @@
             </div>
         </div>
 
-        <!-- Seção de Feedback e Resultados -->
-        <div id="loading-container" class="hidden flex flex-col items-center justify-center my-8">
-            <div class="loader"></div>
-            <p id="loading-text" class="mt-4 text-gray-600">Analisando... Isso pode levar alguns segundos.</p>
-        </div>
+        <!-- Seção de Feedback (Loading e Erros) -->
+        <div id="feedback-container"></div>
         
-        <div id="parsed-data-container" class="hidden bg-blue-50 p-4 rounded-lg my-6"></div>
-        <div id="results-container" class="space-y-6"></div>
-
          <footer class="text-center mt-10 text-xs text-gray-500">
-            <p><strong>Aviso Legal:</strong> Esta calculadora é uma ferramenta de simulação e usa IA para interpretar os dados. Os resultados não substituem uma consulta com um profissional de direito previdenciário e devem ser confirmados com o INSS. A precisão depende da qualidade do texto ou do arquivo CNIS fornecido.</p>
+            <p><strong>Aviso Legal:</strong> Esta calculadora é uma ferramenta de simulação e usa IA para interpretar os dados. Os resultados não substituem uma consulta com um profissional de direito previdenciário e devem ser confirmados com o INSS.</p>
         </footer>
     </div>
 
@@ -115,36 +99,19 @@
             if (cnisPdfInput.files.length > 0) cnisTextInput.value = '';
         });
 
-        function formatTimeDifference(years, months, days) {
-            let parts = [];
-            if (years > 0) parts.push(`${years} ${years > 1 ? 'anos' : 'ano'}`);
-            if (months > 0) parts.push(`${months} ${months > 1 ? 'meses' : 'mês'}`);
-            if (days > 0) parts.push(`${days} ${days > 1 ? 'dias' : 'dia'}`);
-            return parts.length > 0 ? parts.join(', ') : "0 dias";
-        }
-
-        function dateDiff(startDate, endDate) {
-            let years = endDate.getFullYear() - startDate.getFullYear();
-            let months = endDate.getMonth() - startDate.getMonth();
-            let days = endDate.getDate() - startDate.getDate();
-            if (days < 0) {
-                months--;
-                days += new Date(endDate.getFullYear(), endDate.getMonth(), 0).getDate();
-            }
-            if (months < 0) {
-                years--;
-                months += 12;
-            }
-            return { years, months, days, totalDays: (endDate - startDate) / (1000 * 60 * 60 * 24) };
+        function showFeedback(message, isError = false) {
+            const feedbackContainer = document.getElementById('feedback-container');
+            const bgColor = isError ? 'bg-red-100' : 'bg-blue-50';
+            const borderColor = isError ? 'border-red-500' : 'border-blue-500';
+            const textColor = isError ? 'text-red-700' : 'text-blue-700';
+            
+            feedbackContainer.innerHTML = `
+                <div class="${bgColor} border-l-4 ${borderColor} ${textColor} p-4 rounded-lg flex items-center justify-center space-x-4" role="alert">
+                    ${!isError ? '<div class="loader"></div>' : ''}
+                    <p class="font-bold">${message}</p>
+                </div>`;
         }
         
-        function totalDaysToYMD(totalDays) {
-            const years = Math.floor(totalDays / 365.25);
-            const months = Math.floor((totalDays % 365.25) / 30.4375);
-            const days = Math.round((totalDays % 365.25) % 30.4375);
-            return { years, months, days, totalDays };
-        }
-
         async function analyzeAndCalculate() {
             const dob = document.getElementById('dob').value;
             const cnisText = cnisTextInput.value;
@@ -156,42 +123,41 @@
             }
 
             const calculateBtn = document.getElementById('calculateBtn');
-            const loadingContainer = document.getElementById('loading-container');
-            const loadingText = document.getElementById('loading-text');
-            const resultsContainer = document.getElementById('results-container');
-            const parsedContainer = document.getElementById('parsed-data-container');
-
             calculateBtn.disabled = true;
             calculateBtn.classList.add('opacity-50');
-            loadingContainer.classList.remove('hidden');
-            resultsContainer.innerHTML = '';
-            parsedContainer.classList.add('hidden');
+            document.getElementById('feedback-container').innerHTML = '';
 
             try {
                 let extractedText = cnisText;
                 if (cnisFile) {
-                    loadingText.textContent = 'Lendo seu arquivo PDF...';
+                    showFeedback('Lendo seu arquivo PDF...');
                     extractedText = await getTextFromPdf(cnisFile);
                 }
 
-                if (!extractedText.trim()) throw new Error("Nenhum texto para analisar.");
+                if (!extractedText.trim()) throw new Error("Nenhum texto para analisar. O arquivo PDF pode estar vazio ou o texto colado está em branco.");
 
-                loadingText.textContent = 'Analisando seu CNIS com a IA...';
+                showFeedback('Analisando seu CNIS com a IA...');
                 const periods = await getPeriodsFromCnis(extractedText);
                 
                 if (!periods || periods.length === 0) throw new Error("A IA não conseguiu extrair vínculos do texto fornecido.");
                 
-                displayParsedPeriods(periods, parsedContainer);
-                const { totalContributionDays, firstContributionDate } = calculateTotalContributionFromPeriods(periods);
-                const contributionTime = totalDaysToYMD(totalContributionDays);
-                calculateRetirement(contributionTime, firstContributionDate);
+                // Salvar os dados para a próxima página
+                const resultsData = {
+                    dob: dob,
+                    gender: document.getElementById('gender').value,
+                    isTeacher: document.getElementById('is_teacher').checked,
+                    periods: periods // Passamos os períodos brutos para a próxima página
+                };
+
+                localStorage.setItem('retirementResults', JSON.stringify(resultsData));
+
+                // Redirecionar para a página de resultados
+                window.location.href = 'resultados.html';
 
             } catch (error) {
-                resultsContainer.innerHTML = `<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-lg animate-fade-in" role="alert"><p class="font-bold">Erro na Análise</p><p>${error.message}</p></div>`;
-            } finally {
+                showFeedback(error.message, true);
                 calculateBtn.disabled = false;
                 calculateBtn.classList.remove('opacity-50');
-                loadingContainer.classList.add('hidden');
             }
         }
         
@@ -208,7 +174,7 @@
                             fullText += textContent.items.map(item => item.str).join(' ') + '\n';
                         }
                         resolve(fullText);
-                    } catch (e) { reject(new Error('Não foi possível ler o arquivo PDF.')); }
+                    } catch (e) { reject(new Error('Não foi possível ler o arquivo PDF. Verifique se não está corrompido.')); }
                 };
                 fileReader.onerror = () => reject(new Error('Erro ao ler o arquivo.'));
                 fileReader.readAsArrayBuffer(file);
@@ -216,9 +182,7 @@
         }
         
         async function getPeriodsFromCnis(cnisText) {
-            // A chamada agora é para a nossa função segura, não para o Google.
             const functionUrl = '/.netlify/functions/analyze-cnis'; 
-
             const response = await fetch(functionUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -227,183 +191,11 @@
 
             if (!response.ok) {
                 const errorResult = await response.json();
-                throw new Error(errorResult.error || `Erro na função: ${response.statusText}`);
+                throw new Error(errorResult.error || `Erro na função do servidor: ${response.statusText}`);
             }
             const result = await response.json();
             return result.vinculos;
         }
-
-        function displayParsedPeriods(periods, container) {
-            let html = '<h3 class="font-bold text-lg mb-2 text-blue-800">Vínculos Extraídos pela IA:</h3><ul class="list-disc pl-5 text-sm text-gray-700">';
-            periods.forEach(p => {
-                const start = new Date(p.dataInicio + 'T00:00:00').toLocaleDateString('pt-BR');
-                const end = new Date(p.dataFim + 'T00:00:00').toLocaleDateString('pt-BR');
-                html += `<li>De <strong>${start}</strong> até <strong>${end}</strong></li>`;
-            });
-            container.innerHTML = html + '</ul>';
-            container.classList.remove('hidden');
-        }
-
-        function calculateTotalContributionFromPeriods(periods) {
-            const datePeriods = periods
-                .map(p => ({ start: new Date(p.dataInicio), end: new Date(p.dataFim) }))
-                .filter(p => !isNaN(p.start) && !isNaN(p.end) && p.start <= p.end)
-                .sort((a, b) => a.start - b.start);
-
-            if (datePeriods.length === 0) return { totalContributionDays: 0, firstContributionDate: null };
-
-            const merged = [datePeriods[0]];
-            for (let i = 1; i < datePeriods.length; i++) {
-                const last = merged[merged.length - 1];
-                if (datePeriods[i].start <= last.end) {
-                    last.end = new Date(Math.max(last.end, datePeriods[i].end));
-                } else {
-                    merged.push(datePeriods[i]);
-                }
-            }
-            const totalContributionDays = merged.reduce((acc, p) => acc + ((p.end - p.start) / 86400000) + 1, 0);
-            return { totalContributionDays, firstContributionDate: datePeriods[0].start };
-        }
-        
-        function calculateRetirement(contributionTime, contributionStartDate) {
-            const dob = document.getElementById('dob').value;
-            const gender = document.getElementById('gender').value;
-            const isTeacher = document.getElementById('is_teacher').checked;
-            const today = new Date();
-            const birthDate = new Date(dob);
-            const age = dateDiff(birthDate, today);
-            
-            const resultsContainer = document.getElementById('results-container');
-            resultsContainer.innerHTML = `<div class="bg-white p-6 rounded-xl shadow-lg animate-fade-in">
-                <h2 class="text-2xl font-semibold mb-4 text-center text-gray-700">Resultados da Simulação</h2>
-                <div class="text-center mb-4 p-3 bg-gray-200 rounded-lg">
-                    <p><strong>Idade Atual:</strong> ${age.years} anos e ${age.months} meses.</p>
-                    <p><strong>Tempo Total de Contribuição:</strong> ${formatTimeDifference(contributionTime.years, contributionTime.months, contributionTime.days)}.</p>
-                </div>
-            </div>`;
-            
-            let minContributionTime = gender === 'male' ? 35 : 30;
-            if (isTeacher) minContributionTime -= 5;
-
-            calculatePointsRule(age, contributionTime, gender, isTeacher, minContributionTime, resultsContainer);
-            calculateMinAgeRule(age, contributionTime, gender, isTeacher, minContributionTime, resultsContainer);
-            calculateToll50Rule(contributionStartDate, contributionTime, gender, isTeacher, minContributionTime, resultsContainer);
-            calculateToll100Rule(age, contributionStartDate, contributionTime, gender, isTeacher, minContributionTime, resultsContainer);
-        }
-
-        function createResultCard(title, status, message, container) {
-            const statusColor = status === 'Elegível' ? 'green' : (status === 'Não Elegível' ? 'orange' : 'gray');
-            const cardHTML = `
-                <div class="result-card bg-white p-6 rounded-xl shadow-lg border-l-4 border-${statusColor}-500 animate-fade-in">
-                    <h3 class="text-xl font-bold text-gray-800 mb-2">${title}</h3>
-                    <p class="text-lg font-semibold text-${statusColor}-600 mb-3">${status}</p>
-                    <div class="text-gray-600 space-y-1">${message}</div>
-                </div>
-            `;
-            container.innerHTML += cardHTML;
-        }
-        
-        // As funções de cálculo de regras (calculatePointsRule, etc.) permanecem as mesmas.
-        // Elas são chamadas após a análise da IA e o cálculo do tempo total.
-        function calculatePointsRule(age, contributionTime, gender, isTeacher, minContributionTime, container) {
-            const today = new Date();
-            const currentYear = today.getFullYear();
-            let basePoints = (gender === 'male' ? 96 : 86) - (isTeacher ? 5 : 0);
-            const pointsLimit = (gender === 'male' ? 105 : 100);
-            let requiredPoints = basePoints + (currentYear - 2019);
-            if (requiredPoints > pointsLimit) requiredPoints = pointsLimit;
-            const currentPoints = age.years + contributionTime.years;
-            let message = `<p><strong>Requisitos (${currentYear}):</strong> ${requiredPoints} pontos e ${minContributionTime} anos de contribuição.</p><p><strong>Sua situação:</strong> ${currentPoints} pontos e ${contributionTime.years} anos, ${contributionTime.months} meses de contribuição.</p>`;
-            if (currentPoints >= requiredPoints && contributionTime.years >= minContributionTime) {
-                createResultCard('Regra 1: Sistema de Pontos', 'Elegível', message, container);
-            } else {
-                let yearsToAdd = 0;
-                while(yearsToAdd <= 70) {
-                    let futureYear = today.getFullYear() + Math.floor(yearsToAdd);
-                    let requiredPointsFuture = basePoints + (futureYear - 2019);
-                    if (requiredPointsFuture > pointsLimit) requiredPointsFuture = pointsLimit;
-                    let currentPointsFuture = (age.totalDays / 365.25 + yearsToAdd) + (contributionTime.totalDays / 365.25 + yearsToAdd);
-                    if (currentPointsFuture >= requiredPointsFuture && (contributionTime.totalDays / 365.25 + yearsToAdd) >= minContributionTime) break;
-                    yearsToAdd += 1/12;
-                }
-                const timeRemaining = dateDiff(today, new Date(today.getFullYear() + Math.floor(yearsToAdd), today.getMonth() + Math.ceil((yearsToAdd % 1) * 12), today.getDate()));
-                message += `<hr class="my-2"><p><strong>Tempo restante estimado:</strong> ${formatTimeDifference(timeRemaining.years, timeRemaining.months, timeRemaining.days)}.</p>`;
-                createResultCard('Regra 1: Sistema de Pontos', 'Não Elegível', message, container);
-            }
-        }
-        function calculateMinAgeRule(age, contributionTime, gender, isTeacher, minContributionTime, container) {
-            const today = new Date();
-            const currentYear = today.getFullYear();
-            let baseAge = (gender === 'male' ? 61 : 56) - (isTeacher ? 5 : 0);
-            const ageLimit = (gender === 'male' ? 65 : 62) - (isTeacher ? 5 : 0);
-            let requiredAge = baseAge + (currentYear - 2019) * 0.5;
-            if (requiredAge > ageLimit) requiredAge = ageLimit;
-            let message = `<p><strong>Requisitos (${currentYear}):</strong> ${requiredAge.toFixed(1).replace('.', ',')} anos de idade e ${minContributionTime} anos de contribuição.</p><p><strong>Sua situação:</strong> ${age.years} anos, ${age.months} meses de idade e ${contributionTime.years} anos, ${contributionTime.months} meses de contribuição.</p>`;
-            if (age.totalDays / 365.25 >= requiredAge && contributionTime.years >= minContributionTime) {
-                 createResultCard('Regra 2: Idade Mínima Progressiva', 'Elegível', message, container);
-            } else {
-                let yearsToAdd = 0;
-                while(yearsToAdd <= 70){
-                    let futureAgeFloat = age.totalDays / 365.25 + yearsToAdd;
-                    let futureYear = today.getFullYear() + Math.floor(yearsToAdd);
-                    let requiredAgeFuture = baseAge + (futureYear - 2019) * 0.5;
-                    if (requiredAgeFuture > ageLimit) requiredAgeFuture = ageLimit;
-                    if(futureAgeFloat >= requiredAgeFuture && (contributionTime.totalDays/365.25 + yearsToAdd) >= minContributionTime) break;
-                    yearsToAdd += 1/12;
-                }
-                const timeRemaining = dateDiff(today, new Date(today.getFullYear() + Math.floor(yearsToAdd), today.getMonth() + Math.ceil((yearsToAdd % 1) * 12), today.getDate()));
-                message += `<hr class="my-2"><p><strong>Tempo restante estimado:</strong> ${formatTimeDifference(timeRemaining.years, timeRemaining.months, timeRemaining.days)}.</p>`;
-                createResultCard('Regra 2: Idade Mínima Progressiva', 'Não Elegível', message, container);
-            }
-        }
-        function calculateToll50Rule(contributionStartDate, contributionTime, gender, isTeacher, minContributionTime, container) {
-            if (!contributionStartDate) {
-                createResultCard('Regra 3: Pedágio de 50%', 'Não Aplicável', "<p>Não foi possível determinar a data do primeiro vínculo para calcular esta regra.</p>", container);
-                return;
-            }
-            const reformDate = new Date('2019-11-13');
-            const contributionOnReformYears = dateDiff(contributionStartDate, reformDate).totalDays / 365.25;
-            const timeMissingOnReform = minContributionTime - contributionOnReformYears;
-            let message = `<p>Esta regra se aplica a quem faltava <strong>menos de 2 anos</strong> para atingir ${minContributionTime} anos de contribuição em 13/11/2019.</p>`;
-            if (timeMissingOnReform > 0 && timeMissingOnReform <= 2) {
-                const toll = timeMissingOnReform * 0.5;
-                const requiredContributionWithToll = minContributionTime + toll;
-                message += `<p><strong>Contribuição total necessária:</strong> ${requiredContributionWithToll.toFixed(2).replace('.', ',')} anos.</p>`;
-                if (contributionTime.totalDays / 365.25 >= requiredContributionWithToll) {
-                    createResultCard('Regra 3: Pedágio de 50%', 'Elegível', message, container);
-                } else {
-                    const yearsToAdd = requiredContributionWithToll - (contributionTime.totalDays / 365.25);
-                    const timeRemaining = totalDaysToYMD(yearsToAdd * 365.25);
-                    message += `<hr class="my-2"><p><strong>Tempo restante para cumprir o pedágio:</strong> ${formatTimeDifference(timeRemaining.years, timeRemaining.months, timeRemaining.days)}.</p>`;
-                    createResultCard('Regra 3: Pedágio de 50%', 'Não Elegível', message, container);
-                }
-            } else {
-                message += `<hr class="my-2"><p>Você não se enquadra nos critérios desta regra.</p>`;
-                createResultCard('Regra 3: Pedágio de 50%', 'Não Aplicável', message, container);
-            }
-        }
-        function calculateToll100Rule(age, contributionStartDate, contributionTime, gender, isTeacher, minContributionTime, container) {
-            if (!contributionStartDate) {
-                createResultCard('Regra 4: Pedágio de 100%', 'Não Aplicável', "<p>Não foi possível determinar a data do primeiro vínculo para calcular esta regra.</p>", container);
-                return;
-            }
-            const requiredAge = (gender === 'male' ? 60 : 57) - (isTeacher ? 5 : 0);
-            const reformDate = new Date('2019-11-13');
-            const timeMissingOnReform = Math.max(0, minContributionTime - (dateDiff(contributionStartDate, reformDate).totalDays / 365.25));
-            const requiredContributionWithToll = minContributionTime + timeMissingOnReform;
-            let message = `<p><strong>Requisitos:</strong> ${requiredAge} anos de idade e cumprir um pedágio de 100% do tempo que faltava para ${minContributionTime} anos de contribuição em 13/11/2019.</p><p><strong>Contribuição total necessária:</strong> ${requiredContributionWithToll.toFixed(2).replace('.', ',')} anos.</p>`;
-            if (age.totalDays / 365.25 >= requiredAge && contributionTime.totalDays / 365.25 >= requiredContributionWithToll) {
-                createResultCard('Regra 4: Pedágio de 100%', 'Elegível', message, container);
-            } else {
-                const timeToMeetAge = Math.max(0, requiredAge - (age.totalDays / 365.25));
-                const timeToMeetContribution = Math.max(0, requiredContributionWithToll - (contributionTime.totalDays / 365.25));
-                const yearsToAdd = Math.max(timeToMeetAge, timeToMeetContribution);
-                const timeRemaining = totalDaysToYMD(yearsToAdd * 365.25);
-                message += `<hr class="my-2"><p><strong>Tempo restante estimado:</strong> ${formatTimeDifference(timeRemaining.years, timeRemaining.months, timeRemaining.days)}.</p>`;
-                createResultCard('Regra 4: Pedágio de 100%', 'Não Elegível', message, container);
-            }
-        }
     </script>
-
 </body>
 </html>
